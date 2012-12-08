@@ -518,6 +518,13 @@ struct perf_output_handle {
 	int				page;
 };
 
+struct pers_event_desc {
+	struct perf_event_attr *attr;
+	struct perf_event *event;
+	struct list_head plist;
+	int fd;
+};
+
 #ifdef CONFIG_PERF_EVENTS
 
 extern int perf_pmu_register(struct pmu *pmu, char *name, int type);
@@ -750,7 +757,9 @@ extern void perf_event_enable(struct perf_event *event);
 extern void perf_event_disable(struct perf_event *event);
 extern int __perf_event_disable(void *info);
 extern void perf_event_task_tick(void);
-#else
+extern int perf_add_persistent_event(struct perf_event_attr *, unsigned);
+extern int perf_add_persistent_event_by_id(int id);
+#else /* !CONFIG_PERF_EVENTS */
 static inline void
 perf_event_task_sched_in(struct task_struct *prev,
 			 struct task_struct *task)			{ }
@@ -790,7 +799,10 @@ static inline void perf_event_enable(struct perf_event *event)		{ }
 static inline void perf_event_disable(struct perf_event *event)		{ }
 static inline int __perf_event_disable(void *info)			{ return -1; }
 static inline void perf_event_task_tick(void)				{ }
-#endif
+static inline int perf_add_persistent_event(struct perf_event_attr *attr,
+					    unsigned nr_pages)		{ return -EINVAL; }
+static inline int perf_add_persistent_event_by_id(int id)		{ return -EINVAL; }
+#endif /* !CONFIG_PERF_EVENTS */
 
 #if defined(CONFIG_PERF_EVENTS) && defined(CONFIG_NO_HZ_FULL)
 extern bool perf_event_can_stop_tick(void);

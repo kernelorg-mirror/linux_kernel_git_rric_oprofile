@@ -38,6 +38,7 @@ struct ring_buffer {
 extern void rb_free(struct ring_buffer *rb);
 extern struct ring_buffer *
 rb_alloc(int nr_pages, long watermark, int cpu, int flags);
+extern void rb_put(struct ring_buffer *rb);
 extern void perf_event_wakeup(struct perf_event *event);
 
 extern void
@@ -174,4 +175,7 @@ static inline bool arch_perf_have_user_stack_dump(void)
 #define perf_user_stack_pointer(regs) 0
 #endif /* CONFIG_HAVE_PERF_USER_STACK_DUMP */
 
+extern const struct file_operations perf_fops;
+extern int perf_get_persistent_event_fd(unsigned cpu, struct perf_event_attr *attr);
+extern void __init persistent_events_init(void);
 #endif /* _KERNEL_EVENTS_INTERNAL_H */

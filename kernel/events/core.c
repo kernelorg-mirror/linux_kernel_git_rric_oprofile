@@ -3021,8 +3021,6 @@ static void free_event_rcu(struct rcu_head *head)
 	kfree(event);
 }
 
-static void rb_put(struct ring_buffer *rb);
-
 static void free_event(struct perf_event *event)
 {
 	irq_work_sync(&event->pending);
@@ -3398,8 +3396,6 @@ unlock:
 	return ret;
 }
 
-static const struct file_operations perf_fops;
-
 static inline int perf_fget_light(int fd, struct fd *p)
 {
 	struct fd f = fdget(fd);
@@ -3684,7 +3680,7 @@ static struct ring_buffer *rb_get(struct perf_event *event)
 	return rb;
 }
 
-static void rb_put(struct ring_buffer *rb)
+void rb_put(struct ring_buffer *rb)
 {
 	struct perf_event *event, *n;
 	unsigned long flags;
@@ -3866,7 +3862,7 @@ static int perf_fasync(int fd, struct file *filp, int on)
 	return 0;
 }
 
-static const struct file_operations perf_fops = {
+const struct file_operations perf_fops = {
 	.llseek			= no_llseek,
 	.release		= perf_release,
 	.read			= perf_read,
@@ -6623,6 +6619,9 @@ SYSCALL_DEFINE5(perf_event_open,
 	if (err)
 		return err;
 
+	if (attr.persistent)
+		return perf_get_persistent_event_fd(cpu, &attr);
+
 	if (!attr.exclude_kernel) {
 		if (perf_paranoid_kernel() && !capable(CAP_SYS_ADMIN))
 			return -EACCES;
@@ -7579,6 +7578,8 @@ void __init perf_event_init(void)
 	 */
 	BUILD_BUG_ON((offsetof(struct perf_event_mmap_page, data_head))
 		     != 1024);
+
+	persistent_events_init();
 }
 
 static int __init perf_event_sysfs_init(void)
