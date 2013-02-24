@@ -1990,6 +1990,25 @@ int __init mcheck_init(void)
 	return 0;
 }
 
+#ifdef CONFIG_EVENT_TRACING
+
+int __init mcheck_init_tp(void)
+{
+	int ret = perf_add_persistent_tp(&event_mce_record);
+
+	if (ret && ret != -ENOENT)
+		pr_err("Error adding MCE persistent event: %d\n", ret);
+
+	return ret;
+}
+/*
+ * We can't run earlier because persistent events uses anon_inode_getfile and
+ * its anon_inode_mnt gets initialized as a fs_initcall.
+ */
+fs_initcall_sync(mcheck_init_tp);
+
+#endif /* CONFIG_EVENT_TRACING */
+
 /*
  * mce_syscore: PM support
  */
