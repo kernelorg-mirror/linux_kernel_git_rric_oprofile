@@ -212,8 +212,7 @@ void perf_output_end(struct perf_output_handle *handle)
 	rcu_read_unlock();
 }
 
-static void
-ring_buffer_init(struct ring_buffer *rb, long watermark, int flags)
+static void rb_init(struct ring_buffer *rb, long watermark, int flags)
 {
 	long max_size = perf_data_size(rb);
 
@@ -290,7 +289,7 @@ struct ring_buffer *rb_alloc(int nr_pages, long watermark, int cpu, int flags)
 
 	rb->nr_pages = nr_pages;
 
-	ring_buffer_init(rb, watermark, flags);
+	rb_init(rb, watermark, flags);
 
 	return rb;
 
@@ -395,7 +394,7 @@ struct ring_buffer *rb_alloc(int nr_pages, long watermark, int cpu, int flags)
 	rb->page_order = ilog2(nr_pages);
 	rb->nr_pages = !!nr_pages;
 
-	ring_buffer_init(rb, watermark, flags);
+	rb_init(rb, watermark, flags);
 
 	return rb;
 
