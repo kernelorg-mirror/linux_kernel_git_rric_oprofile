@@ -16,6 +16,19 @@ struct pers_event_desc {
 
 static DEFINE_PER_CPU(struct list_head, pers_events);
 
+static struct pers_event_desc
+*get_persistent_event(int cpu, struct perf_event_attr *attr)
+{
+	struct pers_event_desc *desc;
+
+	list_for_each_entry(desc, &per_cpu(pers_events, cpu), plist) {
+		if (desc->event->attr.config == attr->config)
+			return desc;
+	}
+
+	return NULL;
+}
+
 static struct perf_event *
 add_persistent_event_on_cpu(unsigned int cpu, struct perf_event_attr *attr,
 			    unsigned nr_pages)
@@ -58,18 +71,13 @@ out:
 
 static void del_persistent_event(int cpu, struct perf_event_attr *attr)
 {
-	struct pers_event_desc *desc, *tmp;
-	struct perf_event *event = NULL;
+	struct pers_event_desc *desc;
+	struct perf_event *event;
 
-	list_for_each_entry_safe(desc, tmp, &per_cpu(pers_events, cpu), plist) {
-		if (desc->event->attr.config == attr->config) {
-			event = desc->event;
-			break;
-		}
-	}
-
-	if (!event)
+	desc = get_persistent_event(cpu, attr);
+	if (!desc)
 		return;
+	event = desc->event;
 
 	list_del(&desc->plist);
 
@@ -161,11 +169,11 @@ int perf_get_persistent_event_fd(unsigned cpu, struct perf_event_attr *attr)
 	if (cpu >= (unsigned)nr_cpu_ids)
 		return -EINVAL;
 
-	list_for_each_entry(desc, &per_cpu(pers_events, cpu), plist)
-		if (desc->event->attr.config == attr->config)
-			return __alloc_persistent_event_fd(desc);
+	desc = get_persistent_event(cpu, attr);
+	if (!desc)
+		return -ENODEV;
 
-	return -ENODEV;
+	return __alloc_persistent_event_fd(desc);
 }
 
 
