@@ -15,6 +15,7 @@ struct pers_event_desc {
 };
 
 static DEFINE_PER_CPU(struct list_head, pers_events);
+static DEFINE_PER_CPU(struct mutex, pers_events_lock);
 
 static struct pers_event_desc
 *get_persistent_event(int cpu, struct perf_event_attr *attr)
@@ -37,9 +38,13 @@ add_persistent_event_on_cpu(unsigned int cpu, struct perf_event_attr *attr,
 	struct pers_event_desc *desc;
 	struct ring_buffer *buf;
 
+	mutex_lock(&per_cpu(pers_events_lock, cpu));
+
 	desc = kzalloc(sizeof(*desc), GFP_KERNEL);
-	if (!desc)
-		return ERR_PTR(-ENOMEM);
+	if (!desc) {
+		event = ERR_PTR(-ENOMEM);
+		goto out;
+	}
 
 	event = perf_event_create_kernel_counter(attr, cpu, NULL, NULL, NULL);
 	if (IS_ERR(event))
@@ -66,6 +71,7 @@ err_rb:
 err_event:
 	kfree(desc);
 out:
+	mutex_unlock(&per_cpu(pers_events_lock, cpu));
 	return event;
 }
 
@@ -74,9 +80,11 @@ static void del_persistent_event(int cpu, struct perf_event_attr *attr)
 	struct pers_event_desc *desc;
 	struct perf_event *event;
 
+	mutex_lock(&per_cpu(pers_events_lock, cpu));
+
 	desc = get_persistent_event(cpu, attr);
 	if (!desc)
-		return;
+		goto out;
 	event = desc->event;
 
 	list_del(&desc->plist);
@@ -85,6 +93,8 @@ static void del_persistent_event(int cpu, struct perf_event_attr *attr)
 	perf_event_release_kernel(event);
 	put_unused_fd(desc->fd);
 	kfree(desc);
+out:
+	mutex_unlock(&per_cpu(pers_events_lock, cpu));
 }
 
 /*
@@ -138,28 +148,33 @@ int perf_add_persistent_event_by_id(int id)
 int perf_get_persistent_event_fd(unsigned cpu, struct perf_event_attr *attr)
 {
 	struct pers_event_desc *desc;
-	int event_fd;
+	int event_fd = -ENODEV;
 
 	if (cpu >= (unsigned)nr_cpu_ids)
 		return -EINVAL;
 
+	mutex_lock(&per_cpu(pers_events_lock, cpu));
+
 	desc = get_persistent_event(cpu, attr);
 	if (!desc)
-		return -ENODEV;
+		goto out;
 
 	event_fd = anon_inode_getfd("[pers_event]", &perf_fops,
 				desc->event, O_RDONLY);
 	if (event_fd >= 0)
 		desc->fd = event_fd;
+out:
+	mutex_unlock(&per_cpu(pers_events_lock, cpu));
 
 	return event_fd;
 }
 
-
 void __init persistent_events_init(void)
 {
-	int i;
+	int cpu;
 
-	for_each_possible_cpu(i)
-		INIT_LIST_HEAD(&per_cpu(pers_events, i));
+	for_each_possible_cpu(cpu) {
+		INIT_LIST_HEAD(&per_cpu(pers_events, cpu));
+		mutex_init(&per_cpu(pers_events_lock, cpu));
+	}
 }
