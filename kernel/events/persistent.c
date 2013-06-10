@@ -87,33 +87,6 @@ static void del_persistent_event(int cpu, struct perf_event_attr *attr)
 	kfree(desc);
 }
 
-static int __alloc_persistent_event_fd(struct pers_event_desc *desc)
-{
-	struct file *event_file = NULL;
-	int event_fd = -1;
-
-	event_fd = get_unused_fd();
-	if (event_fd < 0)
-		goto out;
-
-	event_file = anon_inode_getfile("[pers_event]", &perf_fops,
-					desc->event, O_RDONLY);
-	if (IS_ERR(event_file))
-		goto err_event_file;
-
-	desc->fd = event_fd;
-	fd_install(event_fd, event_file);
-
-	goto out;
-
-
- err_event_file:
-	put_unused_fd(event_fd);
-
- out:
-	return event_fd;
-}
-
 /*
  * Create and enable the persistent version of the perf event described by
  * @attr.
@@ -165,6 +138,7 @@ int perf_add_persistent_event_by_id(int id)
 int perf_get_persistent_event_fd(unsigned cpu, struct perf_event_attr *attr)
 {
 	struct pers_event_desc *desc;
+	int event_fd;
 
 	if (cpu >= (unsigned)nr_cpu_ids)
 		return -EINVAL;
@@ -173,7 +147,12 @@ int perf_get_persistent_event_fd(unsigned cpu, struct perf_event_attr *attr)
 	if (!desc)
 		return -ENODEV;
 
-	return __alloc_persistent_event_fd(desc);
+	event_fd = anon_inode_getfd("[pers_event]", &perf_fops,
+				desc->event, O_RDONLY);
+	if (event_fd >= 0)
+		desc->fd = event_fd;
+
+	return event_fd;
 }
 
 
