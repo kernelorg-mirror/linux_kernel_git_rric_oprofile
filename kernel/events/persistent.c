@@ -8,6 +8,12 @@
 /* 512 kiB: default perf tools memory size, see perf_evlist__mmap() */
 #define CPU_BUFFER_NR_PAGES	((512 * 1024) / PAGE_SIZE)
 
+struct pers_event_desc {
+	struct perf_event *event;
+	struct list_head plist;
+	int fd;
+};
+
 static DEFINE_PER_CPU(struct list_head, pers_events);
 
 static struct perf_event *
@@ -33,7 +39,6 @@ add_persistent_event_on_cpu(unsigned int cpu, struct perf_event_attr *attr,
 	rcu_assign_pointer(event->rb, buf);
 
 	desc->event = event;
-	desc->attr  = attr;
 
 	INIT_LIST_HEAD(&desc->plist);
 	list_add_tail(&desc->plist, &per_cpu(pers_events, cpu));
@@ -59,7 +64,7 @@ static void del_persistent_event(int cpu, struct perf_event_attr *attr)
 	struct perf_event *event = NULL;
 
 	list_for_each_entry_safe(desc, tmp, &per_cpu(pers_events, cpu), plist) {
-		if (desc->attr->config == attr->config) {
+		if (desc->event->attr.config == attr->config) {
 			event = desc->event;
 			break;
 		}
@@ -78,7 +83,6 @@ static void del_persistent_event(int cpu, struct perf_event_attr *attr)
 
 	perf_event_release_kernel(event);
 	put_unused_fd(desc->fd);
-	kfree(desc->attr);
 	kfree(desc);
 }
 
@@ -165,7 +169,7 @@ int perf_get_persistent_event_fd(unsigned cpu, struct perf_event_attr *attr)
 		return -EINVAL;
 
 	list_for_each_entry(desc, &per_cpu(pers_events, cpu), plist)
-		if (desc->attr->config == attr->config)
+		if (desc->event->attr.config == attr->config)
 			return __alloc_persistent_event_fd(desc);
 
 	return -ENODEV;

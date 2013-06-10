@@ -518,13 +518,6 @@ struct perf_output_handle {
 	int				page;
 };
 
-struct pers_event_desc {
-	struct perf_event_attr *attr;
-	struct perf_event *event;
-	struct list_head plist;
-	int fd;
-};
-
 #ifdef CONFIG_PERF_EVENTS
 
 extern int perf_pmu_register(struct pmu *pmu, char *name, int type);
