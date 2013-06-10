@@ -40,6 +40,12 @@ add_persistent_event_on_cpu(unsigned int cpu, struct perf_event_attr *attr,
 
 	mutex_lock(&per_cpu(pers_events_lock, cpu));
 
+	desc = get_persistent_event(cpu, attr);
+	if (desc) {
+		event = ERR_PTR(-EEXIST);
+		goto out;
+	}
+
 	desc = kzalloc(sizeof(*desc), GFP_KERNEL);
 	if (!desc) {
 		event = ERR_PTR(-ENOMEM);
