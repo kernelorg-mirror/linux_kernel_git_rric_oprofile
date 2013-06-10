@@ -17,8 +17,10 @@ struct pers_event_desc {
 struct pers_event {
 	char				*name;
 	struct perf_event_attr		attr;
+	struct perf_pmu_events_attr	sysfs;
 };
 
+static struct pmu persistent_pmu;
 static DEFINE_PER_CPU(struct list_head, pers_events);
 static DEFINE_PER_CPU(struct mutex, pers_events_lock);
 
@@ -137,6 +139,8 @@ unwind:
 	return PTR_ERR(event);
 }
 
+static int pers_event_sysfs_register(struct pers_event *event);
+
 int perf_add_persistent_event_by_id(char* name, int id)
 {
 	struct pers_event	*event;
@@ -150,6 +154,8 @@ int perf_add_persistent_event_by_id(char* name, int id)
 	if (!event->name)
 		goto fail;
 
+	event->sysfs.id		= id;
+
 	attr = &event->attr;
 	attr->sample_period	= 1;
 	attr->wakeup_events	= 1;
@@ -162,6 +168,8 @@ int perf_add_persistent_event_by_id(char* name, int id)
 	ret = perf_add_persistent_event(attr, CPU_BUFFER_NR_PAGES);
 	if (ret)
 		goto fail;
+
+	pers_event_sysfs_register(event);
 
 	return 0;
 fail:
@@ -207,12 +215,57 @@ static struct attribute_group persistent_format_group = {
 	.attrs = persistent_format_attrs,
 };
 
-static const struct attribute_group *persistent_attr_groups[] = {
-	&persistent_format_group,
-	NULL,
+#define MAX_EVENTS 16
+
+static struct attribute *persistent_events_attr[MAX_EVENTS + 1] = { };
+
+static struct attribute_group persistent_events_group = {
+	.name = "events",
+	.attrs = persistent_events_attr,
 };
 
-static struct pmu persistent_pmu;
+static const struct attribute_group *persistent_attr_groups[] = {
+	&persistent_format_group,
+	NULL, /* placeholder: &persistent_events_group */
+	NULL,
+};
+#define EVENTS_GROUP	(persistent_attr_groups[1])
+
+static ssize_t pers_event_sysfs_show(struct device *dev,
+				struct device_attribute *__attr, char *page)
+{
+	struct perf_pmu_events_attr *attr =
+		container_of(__attr, struct perf_pmu_events_attr, attr);
+	return sprintf(page, "persistent,config=%lld",
+		(unsigned long long)attr->id);
+}
+
+static int pers_event_sysfs_register(struct pers_event *event)
+{
+	struct device_attribute *attr = &event->sysfs.attr;
+	int idx;
+
+	*attr = (struct device_attribute)__ATTR(, 0444, pers_event_sysfs_show,
+						NULL);
+	attr->attr.name = event->name;
+
+	/* add sysfs attr to events: */
+	for (idx = 0; idx < MAX_EVENTS; idx++) {
+		if (!cmpxchg(persistent_events_attr + idx, NULL, &attr->attr))
+			break;
+	}
+
+	if (idx >= MAX_EVENTS)
+		return -ENOSPC;
+	if (!idx)
+		EVENTS_GROUP = &persistent_events_group;
+	if (!persistent_pmu.dev)
+		return 0;	/* sysfs not yet initialized */
+	if (idx)
+		return sysfs_update_group(&persistent_pmu.dev->kobj,
+					EVENTS_GROUP);
+	return sysfs_create_group(&persistent_pmu.dev->kobj, EVENTS_GROUP);
+}
 
 static int persistent_pmu_init(struct perf_event *event)
 {

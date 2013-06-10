@@ -1,13 +1,14 @@
-Where:		/sys/bus/event_source/devices/<dev>/format
+Where:		/sys/bus/event_source/devices/<pmu>/format/<name>
 Date:		January 2012
-Kernel Version: 3.3
+Kernel Version:	3.3
+		3.12	(added attr<index>:<bits>)
 Contact:	Jiri Olsa <jolsa@redhat.com>
-Description:
-		Attribute group to describe the magic bits that go into
-		perf_event_attr::config[012] for a particular pmu.
-		Each attribute of this group defines the 'hardware' bitmask
-		we want to export, so that userspace can deal with sane
-		name/value pairs.
+
+Description:	Define formats for bit ranges in perf_event_attr
+
+		Attribute group to describe the magic bits that go
+		into struct perf_event_attr for a particular pmu. Bit
+		range may be any bit mask of an u64 (bits 0 to 63).
 
 		Userspace must be prepared for the possibility that attributes
 		define overlapping bit ranges. For example:
@@ -15,6 +16,26 @@ Description:
 			attr2 = 'config:0-7'
 			attr3 = 'config:12-35'
 
-		Example: 'config1:1,6-10,44'
-		Defines contents of attribute that occupies bits 1,6-10,44 of
-		perf_event_attr::config1.
+		Syntax			Description
+
+		config[012]*:<bits>	Each attribute of this group
+					defines the 'hardware' bitmask
+					we want to export, so that
+					userspace can deal with sane
+					name/value pairs.
+
+		attr<index>:<bits>	Set any field of the event
+					attribute. The index is a
+					decimal number that specifies
+					the u64 value to be set within
+					struct perf_event_attr.
+
+		Examples:
+
+		'config1:1,6-10,44'	Defines contents of attribute
+					that occupies bits 1,6-10,44
+					of perf_event_attr::config1.
+
+		'attr5:23'		Define the persistent event
+					flag (bit 23 of the attribute
+					flags)
