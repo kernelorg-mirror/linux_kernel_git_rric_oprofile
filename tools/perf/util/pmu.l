@@ -26,6 +26,7 @@ num_dec         [0-9]+
 %%
 
 {num_dec}	{ return value(10); }
+attr		{ return PP_ATTR; }
 config		{ return PP_CONFIG; }
 config1		{ return PP_CONFIG1; }
 config2		{ return PP_CONFIG2; }
