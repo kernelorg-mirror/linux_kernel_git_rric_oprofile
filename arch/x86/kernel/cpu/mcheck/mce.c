@@ -1991,7 +1991,8 @@ int __init mcheck_init(void)
 
 int __init mcheck_init_tp(void)
 {
-	if (perf_add_persistent_event_by_id(event_mce_record.event.type)) {
+	if (perf_add_persistent_event_by_id(event_mce_record.name,
+					    event_mce_record.event.type)) {
 		pr_err("Error adding MCE persistent event.\n");
 		return -EINVAL;
 	}

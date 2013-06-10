@@ -751,7 +751,7 @@ extern void perf_event_disable(struct perf_event *event);
 extern int __perf_event_disable(void *info);
 extern void perf_event_task_tick(void);
 extern int perf_add_persistent_event(struct perf_event_attr *, unsigned);
-extern int perf_add_persistent_event_by_id(int id);
+extern int perf_add_persistent_event_by_id(char *name, int id);
 #else /* !CONFIG_PERF_EVENTS */
 static inline void
 perf_event_task_sched_in(struct task_struct *prev,
@@ -794,7 +794,7 @@ static inline int __perf_event_disable(void *info)			{ return -1; }
 static inline void perf_event_task_tick(void)				{ }
 static inline int perf_add_persistent_event(struct perf_event_attr *attr,
 					    unsigned nr_pages)		{ return -EINVAL; }
-static inline int perf_add_persistent_event_by_id(int id)		{ return -EINVAL; }
+static inline int perf_add_persistent_event_by_id(char *name, int id)	{ return -EINVAL; }
 #endif /* !CONFIG_PERF_EVENTS */
 
 #if defined(CONFIG_PERF_EVENTS) && defined(CONFIG_NO_HZ_FULL)

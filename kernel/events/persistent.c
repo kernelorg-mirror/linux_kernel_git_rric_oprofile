@@ -14,6 +14,11 @@ struct pers_event_desc {
 	int fd;
 };
 
+struct pers_event {
+	char				*name;
+	struct perf_event_attr		attr;
+};
+
 static DEFINE_PER_CPU(struct list_head, pers_events);
 static DEFINE_PER_CPU(struct mutex, pers_events_lock);
 
@@ -132,14 +137,20 @@ unwind:
 	return PTR_ERR(event);
 }
 
-int perf_add_persistent_event_by_id(int id)
+int perf_add_persistent_event_by_id(char* name, int id)
 {
-	struct perf_event_attr *attr;
+	struct pers_event	*event;
+	struct perf_event_attr	*attr;
+	int ret = -ENOMEM;
 
-	attr = kzalloc(sizeof(*attr), GFP_KERNEL);
-	if (!attr)
+	event = kzalloc(sizeof(*event), GFP_KERNEL);
+	if (!event)
 		return -ENOMEM;
+	event->name = kstrdup(name, GFP_KERNEL);
+	if (!event->name)
+		goto fail;
 
+	attr = &event->attr;
 	attr->sample_period	= 1;
 	attr->wakeup_events	= 1;
 	attr->sample_type	= PERF_SAMPLE_RAW;
@@ -148,7 +159,16 @@ int perf_add_persistent_event_by_id(int id)
 	attr->type		= PERF_TYPE_TRACEPOINT;
 	attr->size		= sizeof(*attr);
 
-	return perf_add_persistent_event(attr, CPU_BUFFER_NR_PAGES);
+	ret = perf_add_persistent_event(attr, CPU_BUFFER_NR_PAGES);
+	if (ret)
+		goto fail;
+
+	return 0;
+fail:
+	kfree(event->name);
+	kfree(event);
+
+	return ret;
 }
 
 int perf_get_persistent_event_fd(unsigned cpu, struct perf_event_attr *attr)
