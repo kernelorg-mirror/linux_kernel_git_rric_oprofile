@@ -11,7 +11,6 @@
 struct pers_event_desc {
 	struct perf_event *event;
 	struct list_head plist;
-	int fd;
 };
 
 struct pers_event {
@@ -88,6 +87,18 @@ out:
 	return event;
 }
 
+static void detach_persistent_event(struct pers_event_desc *desc)
+{
+	list_del(&desc->plist);
+	kfree(desc);
+}
+
+static void release_persistent_event(struct perf_event *event)
+{
+	perf_event_disable(event);
+	perf_event_release_kernel(event);
+}
+
 static void del_persistent_event(int cpu, struct perf_event_attr *attr)
 {
 	struct pers_event_desc *desc;
@@ -100,12 +111,14 @@ static void del_persistent_event(int cpu, struct perf_event_attr *attr)
 		goto out;
 	event = desc->event;
 
-	list_del(&desc->plist);
-
-	perf_event_disable(event);
-	perf_event_release_kernel(event);
-	put_unused_fd(desc->fd);
-	kfree(desc);
+	/*
+	 * We primarily want to remove desc from the list. If there
+	 * are no open files, the refcount is 0 and we need to release
+	 * the event too.
+	 */
+	detach_persistent_event(desc);
+	if (atomic_long_dec_and_test(&event->refcount))
+		release_persistent_event(event);
 out:
 	mutex_unlock(&per_cpu(pers_events_lock, cpu));
 }
@@ -182,6 +195,7 @@ fail:
 int perf_get_persistent_event_fd(unsigned cpu, struct perf_event_attr *attr)
 {
 	struct pers_event_desc *desc;
+	struct perf_event *event;
 	int event_fd = -ENODEV;
 
 	if (cpu >= (unsigned)nr_cpu_ids)
@@ -190,13 +204,25 @@ int perf_get_persistent_event_fd(unsigned cpu, struct perf_event_attr *attr)
 	mutex_lock(&per_cpu(pers_events_lock, cpu));
 
 	desc = get_persistent_event(cpu, attr);
-	if (!desc)
+
+	/* Increment refcount to keep event on put_event() */
+	if (!desc || !atomic_long_inc_not_zero(&desc->event->refcount))
 		goto out;
 
 	event_fd = anon_inode_getfd("[pers_event]", &perf_fops,
 				desc->event, O_RDONLY);
-	if (event_fd >= 0)
-		desc->fd = event_fd;
+
+	if (event_fd < 0) {
+		event = desc->event;
+		if (WARN_ON(atomic_long_dec_and_test(&event->refcount))) {
+			/*
+			 * May not happen since decrementing refcount is
+			 * protected by pers_events_lock.
+			 */
+			detach_persistent_event(desc);
+			release_persistent_event(event);
+		}
+	}
 out:
 	mutex_unlock(&per_cpu(pers_events_lock, cpu));
 
