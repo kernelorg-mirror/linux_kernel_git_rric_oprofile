@@ -40,7 +40,8 @@ static inc_group_count(struct list_head *list,
 %}
 
 %token PE_START_EVENTS PE_START_TERMS
-%token PE_VALUE PE_VALUE_SYM_HW PE_VALUE_SYM_SW PE_RAW PE_TERM
+%token PE_VALUE PE_VALUE_SYM_HW PE_VALUE_SYM_SW PE_RAW
+%token PE_TERM_NAME PE_TERM_ATTR
 %token PE_EVENT_NAME
 %token PE_NAME
 %token PE_MODIFIER_EVENT PE_MODIFIER_BP
@@ -51,7 +52,7 @@ static inc_group_count(struct list_head *list,
 %type <num> PE_VALUE_SYM_HW
 %type <num> PE_VALUE_SYM_SW
 %type <num> PE_RAW
-%type <num> PE_TERM
+%type <num> PE_TERM_ATTR
 %type <str> PE_NAME
 %type <str> PE_NAME_CACHE_TYPE
 %type <str> PE_NAME_CACHE_OP_RESULT
@@ -375,7 +376,7 @@ PE_NAME '=' PE_VALUE
 	struct parse_events_term *term;
 
 	ABORT_ON(parse_events_term__num(&term, PARSE_EVENTS__TERM_TYPE_USER,
-					$1, $3));
+					$1, $3, 0));
 	$$ = term;
 }
 |
@@ -393,7 +394,7 @@ PE_NAME
 	struct parse_events_term *term;
 
 	ABORT_ON(parse_events_term__num(&term, PARSE_EVENTS__TERM_TYPE_USER,
-					$1, 1));
+					$1, 1, 0));
 	$$ = term;
 }
 |
@@ -406,27 +407,30 @@ PE_VALUE_SYM_HW
 	$$ = term;
 }
 |
-PE_TERM '=' PE_NAME
+PE_TERM_NAME '=' PE_NAME
 {
 	struct parse_events_term *term;
 
-	ABORT_ON(parse_events_term__str(&term, (int)$1, NULL, $3));
+	ABORT_ON(parse_events_term__str(&term, PARSE_EVENTS__TERM_TYPE_NAME,
+					NULL, $3));
 	$$ = term;
 }
 |
-PE_TERM '=' PE_VALUE
+PE_TERM_ATTR '=' PE_VALUE
 {
 	struct parse_events_term *term;
 
-	ABORT_ON(parse_events_term__num(&term, (int)$1, NULL, $3));
+	ABORT_ON(parse_events_term__num(&term, PARSE_EVENTS__TERM_TYPE_ATTR,
+					NULL, $3, $1));
 	$$ = term;
 }
 |
-PE_TERM
+PE_TERM_ATTR
 {
 	struct parse_events_term *term;
 
-	ABORT_ON(parse_events_term__num(&term, (int)$1, NULL, 1));
+	ABORT_ON(parse_events_term__num(&term, PARSE_EVENTS__TERM_TYPE_ATTR,
+					NULL, 1, $1));
 	$$ = term;
 }
 
