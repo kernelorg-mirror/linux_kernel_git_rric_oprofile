@@ -471,7 +471,9 @@ static int test__checkterms_simple(struct list_head *terms)
 	/* config=10 */
 	term = list_entry(terms->next, struct parse_events_term, list);
 	TEST_ASSERT_VAL("wrong type term",
-			term->type_term == PARSE_EVENTS__TERM_TYPE_CONFIG);
+			term->type_term == PARSE_EVENTS__TERM_TYPE_ATTR);
+	TEST_ASSERT_VAL("wrong type idx",
+			term->idx == 1);
 	TEST_ASSERT_VAL("wrong type val",
 			term->type_val == PARSE_EVENTS__TERM_TYPE_NUM);
 	TEST_ASSERT_VAL("wrong val", term->val.num == 10);
@@ -480,7 +482,9 @@ static int test__checkterms_simple(struct list_head *terms)
 	/* config1 */
 	term = list_entry(term->list.next, struct parse_events_term, list);
 	TEST_ASSERT_VAL("wrong type term",
-			term->type_term == PARSE_EVENTS__TERM_TYPE_CONFIG1);
+			term->type_term == PARSE_EVENTS__TERM_TYPE_ATTR);
+	TEST_ASSERT_VAL("wrong type idx",
+			term->idx == 7);
 	TEST_ASSERT_VAL("wrong type val",
 			term->type_val == PARSE_EVENTS__TERM_TYPE_NUM);
 	TEST_ASSERT_VAL("wrong val", term->val.num == 1);
@@ -489,7 +493,9 @@ static int test__checkterms_simple(struct list_head *terms)
 	/* config2=3 */
 	term = list_entry(term->list.next, struct parse_events_term, list);
 	TEST_ASSERT_VAL("wrong type term",
-			term->type_term == PARSE_EVENTS__TERM_TYPE_CONFIG2);
+			term->type_term == PARSE_EVENTS__TERM_TYPE_ATTR);
+	TEST_ASSERT_VAL("wrong type idx",
+			term->idx == 8);
 	TEST_ASSERT_VAL("wrong type val",
 			term->type_val == PARSE_EVENTS__TERM_TYPE_NUM);
 	TEST_ASSERT_VAL("wrong val", term->val.num == 3);
