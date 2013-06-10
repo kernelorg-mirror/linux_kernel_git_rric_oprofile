@@ -17,8 +17,8 @@ struct perf_pmu_alias {
 };
 
 struct perf_pmu_format {
-	char *name;
-	int value;
+	char	*name;
+	u64	idx;
 	DECLARE_BITMAP(bits, PERF_PMU_FORMAT_BITS);
 	struct list_head list;
 };
@@ -418,7 +418,6 @@ static int pmu_config_term(struct list_head *formats,
 			   struct parse_events_term *term)
 {
 	struct perf_pmu_format *format;
-	__u64 *vp;
 
 	/*
 	 * Support only for hardcoded and numnerial terms.
@@ -435,27 +434,8 @@ static int pmu_config_term(struct list_head *formats,
 	if (!format)
 		return -EINVAL;
 
-	switch (format->value) {
-	case PERF_PMU_FORMAT_VALUE_CONFIG:
-		vp = &attr->config;
-		break;
-	case PERF_PMU_FORMAT_VALUE_CONFIG1:
-		vp = &attr->config1;
-		break;
-	case PERF_PMU_FORMAT_VALUE_CONFIG2:
-		vp = &attr->config2;
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	/*
-	 * XXX If we ever decide to go with string values for
-	 * non-hardcoded terms, here's the place to translate
-	 * them into value.
-	 */
-	*vp |= pmu_format_value(format->bits, term->val.num);
-	return 0;
+	return parse_events__set_attr(attr, format->idx,
+				pmu_format_value(format->bits, term->val.num));
 }
 
 int perf_pmu__config_terms(struct list_head *formats,
@@ -537,7 +517,7 @@ int perf_pmu__check_alias(struct perf_pmu *pmu, struct list_head *head_terms)
 }
 
 int perf_pmu__new_format(struct list_head *list, char *name,
-			 int config, unsigned long *bits)
+			__u64 idx, unsigned long *bits)
 {
 	struct perf_pmu_format *format;
 
@@ -546,7 +526,7 @@ int perf_pmu__new_format(struct list_head *list, char *name,
 		return -ENOMEM;
 
 	format->name = strdup(name);
-	format->value = config;
+	format->idx = idx;
 	memcpy(format->bits, bits, sizeof(format->bits));
 
 	list_add_tail(&format->list, list);

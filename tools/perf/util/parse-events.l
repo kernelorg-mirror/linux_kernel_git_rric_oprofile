@@ -67,6 +67,19 @@ static int attr(yyscan_t scanner, u64 idx)
 	return PE_TERM_ATTR;
 }
 
+static int attr_parse(yyscan_t scanner)
+{
+	YYSTYPE *yylval = parse_events_get_lval(scanner);
+	char *text = parse_events_get_text(scanner);
+
+	errno = 0;
+	yylval->num = strtoull(text + 4, NULL, 10);
+	if (errno)
+		return PE_ERROR;
+
+	return PE_TERM_ATTR;
+}
+
 %}
 
 %x cond_mem
@@ -161,6 +174,7 @@ refs|Reference|ops|access		|
 misses|miss				{ return str(yyscanner, PE_NAME_CACHE_OP_RESULT); }
 
 <cond_config>{
+attr[0-9]*		{ return attr_parse(yyscanner); }
 config			{ return attr(yyscanner, PERF_ATTR_IDX(config)); }
 config1			{ return attr(yyscanner, PERF_ATTR_IDX(config1)); }
 config2			{ return attr(yyscanner, PERF_ATTR_IDX(config2)); }

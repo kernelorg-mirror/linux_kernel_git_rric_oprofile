@@ -3,12 +3,7 @@
 
 #include <linux/bitops.h>
 #include <linux/perf_event.h>
-
-enum {
-	PERF_PMU_FORMAT_VALUE_CONFIG,
-	PERF_PMU_FORMAT_VALUE_CONFIG1,
-	PERF_PMU_FORMAT_VALUE_CONFIG2,
-};
+#include "parse-events.h"
 
 #define PERF_PMU_FORMAT_BITS 64
 
@@ -34,7 +29,7 @@ int perf_pmu_wrap(void);
 void perf_pmu_error(struct list_head *list, char *name, char const *msg);
 
 int perf_pmu__new_format(struct list_head *list, char *name,
-			 int config, unsigned long *bits);
+			__u64 idx, unsigned long *bits);
 void perf_pmu__set_format(unsigned long *bits, long from, long to);
 int perf_pmu__format_parse(char *dir, struct list_head *head);
 
