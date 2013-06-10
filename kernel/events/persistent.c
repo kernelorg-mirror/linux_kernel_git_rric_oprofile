@@ -12,6 +12,7 @@ struct pevent {
 	int		id;
 };
 
+static struct pmu persistent_pmu;
 static DEFINE_PER_CPU(struct list_head, pevents);
 static DEFINE_PER_CPU(struct mutex, pevents_lock);
 
@@ -210,9 +211,42 @@ int perf_get_persistent_event_fd(int cpu, int id)
 	return event_fd;
 }
 
+PMU_FORMAT_ATTR(persistent, "attr5:23");
+
+static struct attribute *persistent_format_attrs[] = {
+	&format_attr_persistent.attr,
+	NULL,
+};
+
+static struct attribute_group persistent_format_group = {
+	.name = "format",
+	.attrs = persistent_format_attrs,
+};
+
+static const struct attribute_group *persistent_attr_groups[] = {
+	&persistent_format_group,
+	NULL,
+};
+
+static int persistent_pmu_init(struct perf_event *event)
+{
+	if (persistent_pmu.type != event->attr.type)
+		return -ENOENT;
+
+	/* Not a persistent event. */
+	return -EFAULT;
+}
+
+static struct pmu persistent_pmu = {
+	.event_init	= persistent_pmu_init,
+	.attr_groups	= persistent_attr_groups,
+};
+
 void __init perf_register_persistent(void)
 {
 	int cpu;
+
+	perf_pmu_register(&persistent_pmu, "persistent", PERF_TYPE_PERSISTENT);
 
 	for_each_possible_cpu(cpu) {
 		INIT_LIST_HEAD(&per_cpu(pevents, cpu));
