@@ -3021,6 +3021,8 @@ static void free_event_rcu(struct rcu_head *head)
 	kfree(event);
 }
 
+static void rb_put(struct ring_buffer *rb);
+
 static void free_event(struct perf_event *event)
 {
 	irq_work_sync(&event->pending);
@@ -3680,7 +3682,7 @@ static struct ring_buffer *rb_get(struct perf_event *event)
 	return rb;
 }
 
-void rb_put(struct ring_buffer *rb)
+static void rb_put(struct ring_buffer *rb)
 {
 	struct perf_event *event, *n;
 	unsigned long flags;

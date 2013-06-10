@@ -20,21 +20,21 @@ static struct perf_event *
 add_persistent_event_on_cpu(unsigned int cpu, struct perf_event_attr *attr,
 			    unsigned nr_pages)
 {
-	struct perf_event *event = ERR_PTR(-ENOMEM);
+	struct perf_event *event;
 	struct pers_event_desc *desc;
 	struct ring_buffer *buf;
 
 	desc = kzalloc(sizeof(*desc), GFP_KERNEL);
 	if (!desc)
-		goto out;
-
-	buf = rb_alloc(nr_pages, 0, cpu, 0);
-	if (!buf)
-		goto err_rb;
+		return ERR_PTR(-ENOMEM);
 
 	event = perf_event_create_kernel_counter(attr, cpu, NULL, NULL, NULL);
 	if (IS_ERR(event))
 		goto err_event;
+
+	buf = rb_alloc(nr_pages, 0, cpu, 0);
+	if (!buf)
+		goto err_rb;
 
 	rcu_assign_pointer(event->rb, buf);
 
@@ -47,14 +47,12 @@ add_persistent_event_on_cpu(unsigned int cpu, struct perf_event_attr *attr,
 	perf_event_enable(event);
 
 	goto out;
-
- err_event:
-	rb_put(buf);
-
- err_rb:
+err_rb:
+	perf_event_release_kernel(event);
+	event = ERR_PTR(-ENOMEM);
+err_event:
 	kfree(desc);
-
- out:
+out:
 	return event;
 }
 
@@ -76,11 +74,6 @@ static void del_persistent_event(int cpu, struct perf_event_attr *attr)
 	list_del(&desc->plist);
 
 	perf_event_disable(event);
-	if (event->rb) {
-		rb_put(event->rb);
-		rcu_assign_pointer(event->rb, NULL);
-	}
-
 	perf_event_release_kernel(event);
 	put_unused_fd(desc->fd);
 	kfree(desc);
