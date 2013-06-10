@@ -894,8 +894,12 @@ try_again:
 			goto out_err;
 		}
 	}
-
-	if (perf_evlist__mmap(evlist, opts->mmap_pages, false) < 0) {
+try_again2:
+	if (perf_evlist__mmap(evlist, opts->mmap_pages, opts->mmap_ro) < 0) {
+		if (!opts->mmap_ro && errno == EACCES) {
+			opts->mmap_ro = true;
+			goto try_again2;
+		}
 		ui__error("Failed to mmap with %d (%s)\n",
 			    errno, strerror(errno));
 		goto out_err;
