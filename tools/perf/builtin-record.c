@@ -133,8 +133,8 @@ static int record__mmap_read(struct record *rec, struct perf_mmap *md)
 	}
 
 	md->prev = old;
-	perf_mmap__write_tail(md, old);
-
+	if (!rec->opts.mmap_ro)
+		perf_mmap__write_tail(md, old);
 out:
 	return rc;
 }
@@ -207,7 +207,12 @@ try_again:
 		goto out;
 	}
 
-	if (perf_evlist__mmap(evlist, opts->mmap_pages, false) < 0) {
+try_again2:
+	if (perf_evlist__mmap(evlist, opts->mmap_pages, opts->mmap_ro) < 0) {
+		if (!opts->mmap_ro && errno == EACCES) {
+			opts->mmap_ro = true;
+			goto try_again2;
+		}
 		if (errno == EPERM) {
 			pr_err("Permission error mapping pages.\n"
 			       "Consider increasing "
