@@ -69,9 +69,9 @@ static int term(yyscan_t scanner, int type)
 
 %}
 
-%x mem
-%s config
-%x event
+%x cond_mem
+%s cond_config
+%x cond_event
 
 group		[^,{}/]*[{][^}]*[}][^,{}/]*
 event_pmu	[^,{}/]+[/][^/]*[/][^,{}/]*
@@ -94,9 +94,9 @@ modifier_bp	[rwx]{1,3}
 		start_token = parse_events_get_extra(yyscanner);
 
 		if (start_token == PE_START_TERMS)
-			BEGIN(config);
+			BEGIN(cond_config);
 		else if (start_token == PE_START_EVENTS)
-			BEGIN(event);
+			BEGIN(cond_event);
 
 		if (start_token) {
 			parse_events_set_extra(NULL, yyscanner);
@@ -105,7 +105,7 @@ modifier_bp	[rwx]{1,3}
          }
 %}
 
-<event>{
+<cond_event>{
 
 {group}		{
 			BEGIN(INITIAL); yyless(0);
@@ -160,7 +160,7 @@ speculative-read|speculative-load	|
 refs|Reference|ops|access		|
 misses|miss				{ return str(yyscanner, PE_NAME_CACHE_OP_RESULT); }
 
-<config>{
+<cond_config>{
 config			{ return term(yyscanner, PARSE_EVENTS__TERM_TYPE_CONFIG); }
 config1			{ return term(yyscanner, PARSE_EVENTS__TERM_TYPE_CONFIG1); }
 config2			{ return term(yyscanner, PARSE_EVENTS__TERM_TYPE_CONFIG2); }
@@ -172,23 +172,23 @@ branch_type		{ return term(yyscanner, PARSE_EVENTS__TERM_TYPE_BRANCH_SAMPLE_TYPE
 {name_minus}		{ return str(yyscanner, PE_NAME); }
 }
 
-mem:			{ BEGIN(mem); return PE_PREFIX_MEM; }
+mem:			{ BEGIN(cond_mem); return PE_PREFIX_MEM; }
 r{num_raw_hex}		{ return raw(yyscanner); }
 {num_dec}		{ return value(yyscanner, 10); }
 {num_hex}		{ return value(yyscanner, 16); }
 
 {modifier_event}	{ return str(yyscanner, PE_MODIFIER_EVENT); }
 {name}			{ return str(yyscanner, PE_NAME); }
-"/"			{ BEGIN(config); return '/'; }
+"/"			{ BEGIN(cond_config); return '/'; }
 -			{ return '-'; }
-,			{ BEGIN(event); return ','; }
+,			{ BEGIN(cond_event); return ','; }
 :			{ return ':'; }
-"{"			{ BEGIN(event); return '{'; }
+"{"			{ BEGIN(cond_event); return '{'; }
 "}"			{ return '}'; }
 =			{ return '='; }
 \n			{ }
 
-<mem>{
+<cond_mem>{
 {modifier_bp}		{ return str(yyscanner, PE_MODIFIER_BP); }
 :			{ return ':'; }
 {num_dec}		{ return value(yyscanner, 10); }
