@@ -8,6 +8,7 @@
 #define CPU_BUFFER_NR_PAGES	((512 * 1024) / PAGE_SIZE)
 
 struct pevent {
+	struct perf_pmu_events_attr sysfs;
 	char		*name;
 	int		id;
 };
@@ -119,6 +120,8 @@ static void persistent_event_close(int cpu, struct pevent *pevent)
 		persistent_event_release(event);
 }
 
+static int pevent_sysfs_register(struct pevent *event);
+
 static int __maybe_unused
 persistent_open(char *name, struct perf_event_attr *attr, int nr_pages)
 {
@@ -144,11 +147,17 @@ persistent_open(char *name, struct perf_event_attr *attr, int nr_pages)
 		goto fail;
 	}
 
+	pevent->sysfs.id = pevent->id;
+
 	for_each_possible_cpu(cpu) {
 		ret = persistent_event_open(cpu, pevent, attr, nr_pages);
 		if (ret)
 			goto fail;
 	}
+
+	ret = pevent_sysfs_register(pevent);
+	if (ret)
+		goto fail;
 
 	return 0;
 fail:
@@ -223,10 +232,61 @@ static struct attribute_group persistent_format_group = {
 	.attrs = persistent_format_attrs,
 };
 
+#define MAX_EVENTS 16
+
+static struct attribute *pevents_attr[MAX_EVENTS + 1] = { };
+
+static struct attribute_group pevents_group = {
+	.name = "events",
+	.attrs = pevents_attr,
+};
+
 static const struct attribute_group *persistent_attr_groups[] = {
 	&persistent_format_group,
+	NULL,			/* placeholder: &pevents_group */
 	NULL,
 };
+#define EVENTS_GROUP_PTR	(&persistent_attr_groups[1])
+
+static ssize_t pevent_sysfs_show(struct device *dev,
+				struct device_attribute *__attr, char *page)
+{
+	struct perf_pmu_events_attr *attr =
+		container_of(__attr, struct perf_pmu_events_attr, attr);
+	return sprintf(page, "persistent,config=%lld",
+		(unsigned long long)attr->id);
+}
+
+static int pevent_sysfs_register(struct pevent *pevent)
+{
+	struct perf_pmu_events_attr *sysfs = &pevent->sysfs;
+	struct attribute *attr = &sysfs->attr.attr;
+	struct device *dev = persistent_pmu.dev;
+	const struct attribute_group **group = EVENTS_GROUP_PTR;
+	int idx;
+
+	sysfs->id	= pevent->id;
+	sysfs->attr	= (struct device_attribute)
+				__ATTR(, 0444, pevent_sysfs_show, NULL);
+	attr->name	= pevent->name;
+	sysfs_attr_init(attr);
+
+	/* add sysfs attr to events: */
+	for (idx = 0; idx < MAX_EVENTS; idx++) {
+		if (!cmpxchg(pevents_attr + idx, NULL, attr))
+			break;
+	}
+
+	if (idx >= MAX_EVENTS)
+		return -ENOSPC;
+	if (!idx)
+		*group = &pevents_group;
+	if (!dev)
+		return 0;	/* sysfs not yet initialized */
+	if (idx)
+		return sysfs_add_file_to_group(&dev->kobj, attr, (*group)->name);
+	return sysfs_create_group(&persistent_pmu.dev->kobj, *group);
+}
 
 static int persistent_pmu_init(struct perf_event *event)
 {
