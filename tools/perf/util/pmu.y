@@ -20,7 +20,7 @@ do { \
 
 %}
 
-%token PP_CONFIG PP_CONFIG1 PP_CONFIG2
+%token PP_ATTR PP_CONFIG PP_CONFIG1 PP_CONFIG2
 %token PP_VALUE PP_ERROR
 %type <num> PP_VALUE
 %type <bits> bit_term
@@ -40,24 +40,34 @@ format format_term
 format_term
 
 format_term:
+PP_ATTR ':' bits
+{
+	ABORT_ON(perf_pmu__new_format(format, name, 0, $3));
+}
+|
+PP_ATTR PP_VALUE ':' bits
+{
+	ABORT_ON(perf_pmu__new_format(format, name, $2, $4));
+}
+|
 PP_CONFIG ':' bits
 {
 	ABORT_ON(perf_pmu__new_format(format, name,
-				      PERF_PMU_FORMAT_VALUE_CONFIG,
+				      PERF_ATTR_IDX(config),
 				      $3));
 }
 |
 PP_CONFIG1 ':' bits
 {
 	ABORT_ON(perf_pmu__new_format(format, name,
-				      PERF_PMU_FORMAT_VALUE_CONFIG1,
+				      PERF_ATTR_IDX(config1),
 				      $3));
 }
 |
 PP_CONFIG2 ':' bits
 {
 	ABORT_ON(perf_pmu__new_format(format, name,
-				      PERF_PMU_FORMAT_VALUE_CONFIG2,
+				      PERF_ATTR_IDX(config2),
 				      $3));
 }
 
