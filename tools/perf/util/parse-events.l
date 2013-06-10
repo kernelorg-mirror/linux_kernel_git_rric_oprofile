@@ -59,12 +59,12 @@ static int sym(yyscan_t scanner, int type, int config)
 	return type == PERF_TYPE_HARDWARE ? PE_VALUE_SYM_HW : PE_VALUE_SYM_SW;
 }
 
-static int term(yyscan_t scanner, int type)
+static int attr(yyscan_t scanner, u64 idx)
 {
 	YYSTYPE *yylval = parse_events_get_lval(scanner);
 
-	yylval->num = type;
-	return PE_TERM;
+	yylval->num = idx;
+	return PE_TERM_ATTR;
 }
 
 %}
@@ -162,12 +162,12 @@ refs|Reference|ops|access		|
 misses|miss				{ return str(yyscanner, PE_NAME_CACHE_OP_RESULT); }
 
 <cond_config>{
-config			{ return term(yyscanner, PARSE_EVENTS__TERM_TYPE_CONFIG); }
-config1			{ return term(yyscanner, PARSE_EVENTS__TERM_TYPE_CONFIG1); }
-config2			{ return term(yyscanner, PARSE_EVENTS__TERM_TYPE_CONFIG2); }
-name			{ return term(yyscanner, PARSE_EVENTS__TERM_TYPE_NAME); }
-period			{ return term(yyscanner, PARSE_EVENTS__TERM_TYPE_SAMPLE_PERIOD); }
-branch_type		{ return term(yyscanner, PARSE_EVENTS__TERM_TYPE_BRANCH_SAMPLE_TYPE); }
+config			{ return attr(yyscanner, PERF_ATTR_IDX(config)); }
+config1			{ return attr(yyscanner, PERF_ATTR_IDX(config1)); }
+config2			{ return attr(yyscanner, PERF_ATTR_IDX(config2)); }
+period			{ return attr(yyscanner, PERF_ATTR_IDX(sample_period)); }
+branch_type		{ return attr(yyscanner, PERF_ATTR_IDX(branch_sample_type)); }
+name			{ return PE_TERM_NAME; }
 ,			{ return ','; }
 "/"			{ BEGIN(INITIAL); return '/'; }
 {name_minus}		{ return str(yyscanner, PE_NAME); }

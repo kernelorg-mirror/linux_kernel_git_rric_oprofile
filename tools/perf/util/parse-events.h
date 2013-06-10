@@ -35,6 +35,8 @@ extern int parse_events_terms(struct list_head *terms, const char *str);
 extern int parse_filter(const struct option *opt, const char *str, int unset);
 
 #define EVENTS_HELP_MAX (128*1024)
+#define PERF_ATTR_IDX(MEMBER) \
+	(offsetof(struct perf_event_attr, MEMBER) / sizeof(__u64))
 
 enum {
 	PARSE_EVENTS__TERM_TYPE_NUM,
@@ -43,12 +45,8 @@ enum {
 
 enum {
 	PARSE_EVENTS__TERM_TYPE_USER,
-	PARSE_EVENTS__TERM_TYPE_CONFIG,
-	PARSE_EVENTS__TERM_TYPE_CONFIG1,
-	PARSE_EVENTS__TERM_TYPE_CONFIG2,
+	PARSE_EVENTS__TERM_TYPE_ATTR,
 	PARSE_EVENTS__TERM_TYPE_NAME,
-	PARSE_EVENTS__TERM_TYPE_SAMPLE_PERIOD,
-	PARSE_EVENTS__TERM_TYPE_BRANCH_SAMPLE_TYPE,
 };
 
 struct parse_events_term {
@@ -59,6 +57,7 @@ struct parse_events_term {
 	} val;
 	int type_val;
 	int type_term;
+	u64 idx;
 	struct list_head list;
 };
 
@@ -74,7 +73,7 @@ struct parse_events_terms {
 
 int parse_events__is_hardcoded_term(struct parse_events_term *term);
 int parse_events_term__num(struct parse_events_term **_term,
-			   int type_term, char *config, u64 num);
+			   int type_term, char *config, u64 num, u64 idx);
 int parse_events_term__str(struct parse_events_term **_term,
 			   int type_term, char *config, char *str);
 int parse_events_term__sym_hw(struct parse_events_term **term,
@@ -97,6 +96,7 @@ int parse_events_add_breakpoint(struct list_head *list, int *idx,
 int parse_events_add_pmu(struct list_head *list, int *idx,
 			 char *pmu , struct list_head *head_config);
 void parse_events__set_leader(char *name, struct list_head *list);
+int parse_events__set_attr(struct perf_event_attr *__attr, u64 idx, u64 val);
 void parse_events_update_lists(struct list_head *list_event,
 			       struct list_head *list_all);
 void parse_events_error(void *data, void *scanner, char const *msg);

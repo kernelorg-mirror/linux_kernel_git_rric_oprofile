@@ -535,6 +535,19 @@ int parse_events_add_breakpoint(struct list_head *list, int *idx,
 	return add_event(list, idx, &attr, NULL);
 }
 
+int parse_events__set_attr(struct perf_event_attr *__attr, u64 idx, u64 val)
+{
+	__u64 *attr = (__u64 *)__attr;
+
+	if (idx * sizeof(*attr) >= sizeof(*__attr))
+		return -EINVAL;
+
+	attr += idx;
+	*attr |= val;
+
+	return 0;
+}
+
 static int config_term(struct perf_event_attr *attr,
 		       struct parse_events_term *term)
 {
@@ -545,36 +558,17 @@ do {								\
 } while (0)
 
 	switch (term->type_term) {
-	case PARSE_EVENTS__TERM_TYPE_CONFIG:
+	case PARSE_EVENTS__TERM_TYPE_ATTR:
 		CHECK_TYPE_VAL(NUM);
-		attr->config = term->val.num;
-		break;
-	case PARSE_EVENTS__TERM_TYPE_CONFIG1:
-		CHECK_TYPE_VAL(NUM);
-		attr->config1 = term->val.num;
-		break;
-	case PARSE_EVENTS__TERM_TYPE_CONFIG2:
-		CHECK_TYPE_VAL(NUM);
-		attr->config2 = term->val.num;
-		break;
-	case PARSE_EVENTS__TERM_TYPE_SAMPLE_PERIOD:
-		CHECK_TYPE_VAL(NUM);
-		attr->sample_period = term->val.num;
-		break;
-	case PARSE_EVENTS__TERM_TYPE_BRANCH_SAMPLE_TYPE:
-		/*
-		 * TODO uncomment when the field is available
-		 * attr->branch_sample_type = term->val.num;
-		 */
-		break;
+		return parse_events__set_attr(attr, term->idx, term->val.num);
 	case PARSE_EVENTS__TERM_TYPE_NAME:
 		CHECK_TYPE_VAL(STR);
-		break;
+		return 0;
 	default:
-		return -EINVAL;
+		break;
 	}
 
-	return 0;
+	return -EINVAL;
 #undef CHECK_TYPE_VAL
 }
 
@@ -1212,7 +1206,7 @@ int parse_events__is_hardcoded_term(struct parse_events_term *term)
 
 static int new_term(struct parse_events_term **_term, int type_val,
 		    int type_term, char *config,
-		    char *str, u64 num)
+		    char *str, u64 num, u64 idx)
 {
 	struct parse_events_term *term;
 
@@ -1223,7 +1217,8 @@ static int new_term(struct parse_events_term **_term, int type_val,
 	INIT_LIST_HEAD(&term->list);
 	term->type_val  = type_val;
 	term->type_term = type_term;
-	term->config = config;
+	term->config	= config;
+	term->idx	= idx;
 
 	switch (type_val) {
 	case PARSE_EVENTS__TERM_TYPE_NUM:
@@ -1242,17 +1237,17 @@ static int new_term(struct parse_events_term **_term, int type_val,
 }
 
 int parse_events_term__num(struct parse_events_term **term,
-			   int type_term, char *config, u64 num)
+			   int type_term, char *config, u64 num, u64 idx)
 {
 	return new_term(term, PARSE_EVENTS__TERM_TYPE_NUM, type_term,
-			config, NULL, num);
+			config, NULL, num, idx);
 }
 
 int parse_events_term__str(struct parse_events_term **term,
 			   int type_term, char *config, char *str)
 {
 	return new_term(term, PARSE_EVENTS__TERM_TYPE_STR, type_term,
-			config, str, 0);
+			config, str, 0, 0);
 }
 
 int parse_events_term__sym_hw(struct parse_events_term **term,
@@ -1266,18 +1261,18 @@ int parse_events_term__sym_hw(struct parse_events_term **term,
 	if (config)
 		return new_term(term, PARSE_EVENTS__TERM_TYPE_STR,
 				PARSE_EVENTS__TERM_TYPE_USER, config,
-				(char *) sym->symbol, 0);
+				(char *) sym->symbol, 0, 0);
 	else
 		return new_term(term, PARSE_EVENTS__TERM_TYPE_STR,
 				PARSE_EVENTS__TERM_TYPE_USER,
-				(char *) "event", (char *) sym->symbol, 0);
+				(char *) "event", (char *) sym->symbol, 0, 0);
 }
 
 int parse_events_term__clone(struct parse_events_term **new,
 			     struct parse_events_term *term)
 {
 	return new_term(new, term->type_val, term->type_term, term->config,
-			term->val.str, term->val.num);
+			term->val.str, term->val.num, term->idx);
 }
 
 void parse_events__free_terms(struct list_head *terms)
