@@ -526,7 +526,7 @@ export INSTALL SHELL_PATH
 
 SHELL = $(SHELL_PATH)
 
-all: shell_compatibility_test $(ALL_PROGRAMS) $(LANG_BINDINGS) $(OTHER_PROGRAMS)
+all: shell_compatibility_test $(ALL_PROGRAMS) $(LANG_BINDINGS) $(OTHER_PROGRAMS) try-man
 
 please_set_SHELL_PATH_to_a_more_modern_shell:
 	@$$(:)
@@ -714,8 +714,11 @@ help:
 
 DOC_TARGETS := doc man html info pdf
 
-INSTALL_DOC_TARGETS := $(patsubst %,install-%,$(DOC_TARGETS)) try-install-man
+INSTALL_DOC_TARGETS := $(patsubst %,install-%,$(DOC_TARGETS))
 INSTALL_DOC_TARGETS += quick-install-doc quick-install-man quick-install-html
+
+DOC_TARGETS	    += try-man
+INSTALL_DOC_TARGETS += try-install-man
 
 # 'make doc' should call 'make -C Documentation all'
 $(DOC_TARGETS):

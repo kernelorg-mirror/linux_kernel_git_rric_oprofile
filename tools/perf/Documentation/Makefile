@@ -182,6 +182,8 @@ ifdef missing_tools
 	$(error "You need to install $(missing_tools) for man pages")
 endif
 
+do-man: man
+
 do-install-man: man
 	$(INSTALL) -d -m 755 $(DESTDIR)$(man1dir)
 #	$(INSTALL) -d -m 755 $(DESTDIR)$(man5dir)
@@ -192,11 +194,11 @@ do-install-man: man
 
 install-man: check-man-tools man
 
-try-install-man:
+try-install-man try-man:
 ifdef missing_tools
 	$(warning Please install $(missing_tools) to have the man pages installed)
 else
-	$(MAKE) do-install-man
+	$(MAKE) $(patsubst try-%,do-%,$@)
 endif
 
 install-info: info
