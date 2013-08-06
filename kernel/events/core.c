@@ -4100,6 +4100,11 @@ static const struct file_operations perf_fops = {
 	.fasync			= perf_fasync,
 };
 
+int perf_get_fd(struct perf_event *event)
+{
+	return anon_inode_getfd("[perf_event]", &perf_fops, event, O_RDWR);
+}
+
 /*
  * Perf event wakeup
  *
@@ -6868,7 +6873,6 @@ SYSCALL_DEFINE5(perf_event_open,
 	struct perf_event *event, *sibling;
 	struct perf_event_attr attr;
 	struct perf_event_context *ctx;
-	struct file *event_file = NULL;
 	struct fd group = {NULL, 0};
 	struct task_struct *task = NULL;
 	struct pmu *pmu;
@@ -7025,9 +7029,9 @@ SYSCALL_DEFINE5(perf_event_open,
 			goto err_context;
 	}
 
-	event_file = anon_inode_getfile("[perf_event]", &perf_fops, event, O_RDWR);
-	if (IS_ERR(event_file)) {
-		err = PTR_ERR(event_file);
+	event_fd = perf_get_fd(event);
+	if (event_fd < 0) {
+		err = event_fd;
 		goto err_context;
 	}
 
@@ -7093,7 +7097,6 @@ SYSCALL_DEFINE5(perf_event_open,
 	 * perf_group_detach().
 	 */
 	fdput(group);
-	fd_install(event_fd, event_file);
 	return event_fd;
 
 err_context:
