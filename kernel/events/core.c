@@ -3242,12 +3242,9 @@ EXPORT_SYMBOL_GPL(perf_event_release_kernel);
 /*
  * Called when the last reference to the file is gone.
  */
-static void put_event(struct perf_event *event)
+void __put_event(struct perf_event *event)
 {
 	struct task_struct *owner;
-
-	if (!atomic_long_dec_and_test(&event->refcount))
-		return;
 
 	rcu_read_lock();
 	owner = ACCESS_ONCE(event->owner);
@@ -3781,7 +3778,7 @@ static void ring_buffer_detach_all(struct ring_buffer *rb)
 again:
 	rcu_read_lock();
 	list_for_each_entry_rcu(event, &rb->event_list, rb_entry) {
-		if (!atomic_long_inc_not_zero(&event->refcount)) {
+		if (!try_get_event(event)) {
 			/*
 			 * This event is en-route to free_event() which will
 			 * detach it and remove it from the list.
@@ -7445,7 +7442,7 @@ inherit_event(struct perf_event *parent_event,
 	if (IS_ERR(child_event))
 		return child_event;
 
-	if (!atomic_long_inc_not_zero(&parent_event->refcount)) {
+	if (!try_get_event(parent_event)) {
 		free_event(child_event);
 		return NULL;
 	}

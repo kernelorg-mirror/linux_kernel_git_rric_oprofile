@@ -178,4 +178,16 @@ static inline bool arch_perf_have_user_stack_dump(void)
 #define perf_user_stack_pointer(regs) 0
 #endif /* CONFIG_HAVE_PERF_USER_STACK_DUMP */
 
+static inline bool try_get_event(struct perf_event *event)
+{
+	return atomic_long_inc_not_zero(&event->refcount) != 0;
+}
+extern void __put_event(struct perf_event *event);
+static inline void put_event(struct perf_event *event)
+{
+	if (!atomic_long_dec_and_test(&event->refcount))
+		return;
+	__put_event(event);
+}
+
 #endif /* _KERNEL_EVENTS_INTERNAL_H */
