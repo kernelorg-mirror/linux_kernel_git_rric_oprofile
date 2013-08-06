@@ -3124,7 +3124,43 @@ static void free_event_rcu(struct rcu_head *head)
 }
 
 static void ring_buffer_put(struct ring_buffer *rb);
+static void ring_buffer_attach(struct perf_event *event, struct ring_buffer *rb);
 static void ring_buffer_detach(struct perf_event *event, struct ring_buffer *rb);
+
+/*
+ * Must be called with &event->mmap_mutex held. event->rb must be
+ * NULL. perf_alloc_rb() requires &event->mmap_count to be incremented
+ * on success which corresponds to &rb->mmap_count that is initialized
+ * with 1.
+ */
+int perf_alloc_rb(struct perf_event *event, int nr_pages, int flags)
+{
+	struct ring_buffer *rb;
+
+	rb = rb_alloc(nr_pages,
+		event->attr.watermark ? event->attr.wakeup_watermark : 0,
+		event->cpu, flags);
+	if (!rb)
+		return -ENOMEM;
+
+	atomic_set(&rb->mmap_count, 1);
+	ring_buffer_attach(event, rb);
+	rcu_assign_pointer(event->rb, rb);
+
+	perf_event_update_userpage(event);
+
+	return 0;
+}
+
+/* Must be called with &event->mmap_mutex held. event->rb must be set. */
+void perf_free_rb(struct perf_event *event)
+{
+	struct ring_buffer *rb = event->rb;
+
+	rcu_assign_pointer(event->rb, NULL);
+	ring_buffer_detach(event, rb);
+	ring_buffer_put(rb);
+}
 
 static void unaccount_event_cpu(struct perf_event *event, int cpu)
 {
@@ -3177,6 +3213,7 @@ static void __free_event(struct perf_event *event)
 
 	call_rcu(&event->rcu_head, free_event_rcu);
 }
+
 static void free_event(struct perf_event *event)
 {
 	irq_work_sync(&event->pending);
@@ -3184,8 +3221,6 @@ static void free_event(struct perf_event *event)
 	unaccount_event(event);
 
 	if (event->rb) {
-		struct ring_buffer *rb;
-
 		/*
 		 * Can happen when we close an event with re-directed output.
 		 *
@@ -3193,12 +3228,8 @@ static void free_event(struct perf_event *event)
 		 * over us; possibly making our ring_buffer_put() the last.
 		 */
 		mutex_lock(&event->mmap_mutex);
-		rb = event->rb;
-		if (rb) {
-			rcu_assign_pointer(event->rb, NULL);
-			ring_buffer_detach(event, rb);
-			ring_buffer_put(rb); /* could be last */
-		}
+		if (event->rb)
+			perf_free_rb(event);
 		mutex_unlock(&event->mmap_mutex);
 	}
 
@@ -3798,11 +3829,8 @@ again:
 		 * still restart the iteration to make sure we're not now
 		 * iterating the wrong list.
 		 */
-		if (event->rb == rb) {
-			rcu_assign_pointer(event->rb, NULL);
-			ring_buffer_detach(event, rb);
-			ring_buffer_put(rb); /* can't be last, we still have one */
-		}
+		if (event->rb == rb)
+			perf_free_rb(event);
 		mutex_unlock(&event->mmap_mutex);
 		put_event(event);
 
@@ -3938,7 +3966,6 @@ static int perf_mmap(struct file *file, struct vm_area_struct *vma)
 	unsigned long user_locked, user_lock_limit;
 	struct user_struct *user = current_user();
 	unsigned long locked, lock_limit;
-	struct ring_buffer *rb;
 	unsigned long vma_size;
 	unsigned long nr_pages;
 	long user_extra, extra;
@@ -4022,27 +4049,15 @@ again:
 	if (vma->vm_flags & VM_WRITE)
 		flags |= RING_BUFFER_WRITABLE;
 
-	rb = rb_alloc(nr_pages, 
-		event->attr.watermark ? event->attr.wakeup_watermark : 0,
-		event->cpu, flags);
-
-	if (!rb) {
-		ret = -ENOMEM;
+	ret = perf_alloc_rb(event, nr_pages, flags);
+	if (ret)
 		goto unlock;
-	}
 
-	atomic_set(&rb->mmap_count, 1);
-	rb->mmap_locked = extra;
-	rb->mmap_user = get_current_user();
+	event->rb->mmap_locked = extra;
+	event->rb->mmap_user = get_uid(user);
 
 	atomic_long_add(user_extra, &user->locked_vm);
 	vma->vm_mm->pinned_vm += extra;
-
-	ring_buffer_attach(event, rb);
-	rcu_assign_pointer(event->rb, rb);
-
-	perf_event_update_userpage(event);
-
 unlock:
 	if (!ret)
 		atomic_inc(&event->mmap_count);
