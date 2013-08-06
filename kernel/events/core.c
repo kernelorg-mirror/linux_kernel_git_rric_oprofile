@@ -4204,6 +4204,11 @@ static const struct file_operations perf_fops = {
 	.fasync			= perf_fasync,
 };
 
+int perf_get_fd(struct perf_event *event, int flags)
+{
+	return anon_inode_getfd("[perf_event]", &perf_fops, event, flags);
+}
+
 /*
  * Perf event wakeup
  *
@@ -7046,7 +7051,6 @@ SYSCALL_DEFINE5(perf_event_open,
 	struct perf_event *event, *sibling;
 	struct perf_event_attr attr;
 	struct perf_event_context *ctx;
-	struct file *event_file = NULL;
 	struct fd group = {NULL, 0};
 	struct task_struct *task = NULL;
 	struct pmu *pmu;
@@ -7088,14 +7092,10 @@ SYSCALL_DEFINE5(perf_event_open,
 	if (flags & PERF_FLAG_FD_CLOEXEC)
 		f_flags |= O_CLOEXEC;
 
-	event_fd = get_unused_fd_flags(f_flags);
-	if (event_fd < 0)
-		return event_fd;
-
 	if (group_fd != -1) {
 		err = perf_fget_light(group_fd, &group);
 		if (err)
-			goto err_fd;
+			return err;
 		group_leader = group.file->private_data;
 		if (flags & PERF_FLAG_FD_OUTPUT)
 			output_event = group_leader;
@@ -7210,11 +7210,17 @@ SYSCALL_DEFINE5(perf_event_open,
 			goto err_context;
 	}
 
-	event_file = anon_inode_getfile("[perf_event]", &perf_fops, event,
-					f_flags);
-	if (IS_ERR(event_file)) {
-		err = PTR_ERR(event_file);
+	/*
+	 * As soon as we get an fd another thread might close the
+	 * event instantly. Prevent this by getting another ref.
+	 */
+	if (WARN_ON_ONCE(!try_get_event(event)))
 		goto err_context;
+
+	event_fd = perf_get_fd(event, f_flags);
+	if (event_fd < 0) {
+		err = event_fd;
+		goto err_put_event;
 	}
 
 	if (move_group) {
@@ -7278,9 +7284,10 @@ SYSCALL_DEFINE5(perf_event_open,
 	 * perf_group_detach().
 	 */
 	fdput(group);
-	fd_install(event_fd, event_file);
+	put_event(event);
 	return event_fd;
-
+err_put_event:
+	put_event(event);
 err_context:
 	perf_unpin_context(ctx);
 	put_ctx(ctx);
@@ -7292,8 +7299,6 @@ err_task:
 		put_task_struct(task);
 err_group_fd:
 	fdput(group);
-err_fd:
-	put_unused_fd(event_fd);
 	return err;
 }
 
