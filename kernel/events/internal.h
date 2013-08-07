@@ -193,5 +193,7 @@ static inline void put_event(struct perf_event *event)
 extern int perf_alloc_rb(struct perf_event *event, int nr_pages, int flags);
 extern void perf_free_rb(struct perf_event *event);
 extern int perf_get_fd(struct perf_event *event);
+extern int perf_get_persistent_event_fd(int cpu, int id);
+extern void __init perf_register_persistent(void);
 
 #endif /* _KERNEL_EVENTS_INTERNAL_H */
