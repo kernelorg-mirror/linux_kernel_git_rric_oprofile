@@ -4086,6 +4086,9 @@ static int perf_mmap(struct file *file, struct vm_area_struct *vma)
 	if (!(vma->vm_flags & VM_SHARED))
 		return -EINVAL;
 
+	if (event->attr.persistent && (vma->vm_flags & VM_WRITE))
+		return -EACCES;
+
 	vma_size = vma->vm_end - vma->vm_start;
 	nr_pages = (vma_size / PAGE_SIZE) - 1;
 
@@ -4108,6 +4111,11 @@ again:
 	if (event->rb) {
 		if (event->rb->nr_pages != nr_pages) {
 			ret = -EINVAL;
+			goto unlock;
+		}
+
+		if (!event->rb->overwrite && vma->vm_flags & VM_WRITE) {
+			ret = -EACCES;
 			goto unlock;
 		}
 
@@ -6002,7 +6010,7 @@ static struct pmu perf_tracepoint = {
 	.event_idx	= perf_swevent_event_idx,
 };
 
-static inline void perf_tp_register(void)
+static inline void perf_register_tp(void)
 {
 	perf_pmu_register(&perf_tracepoint, "tracepoint", PERF_TYPE_TRACEPOINT);
 }
@@ -6032,18 +6040,14 @@ static void perf_event_free_filter(struct perf_event *event)
 
 #else
 
-static inline void perf_tp_register(void)
-{
-}
+static inline void perf_register_tp(void) { }
 
 static int perf_event_set_filter(struct perf_event *event, void __user *arg)
 {
 	return -ENOENT;
 }
 
-static void perf_event_free_filter(struct perf_event *event)
-{
-}
+static void perf_event_free_filter(struct perf_event *event) { }
 
 #endif /* CONFIG_EVENT_TRACING */
 
@@ -6745,8 +6749,8 @@ perf_event_alloc(struct perf_event_attr *attr, int cpu,
 	INIT_LIST_HEAD(&event->sibling_list);
 	INIT_LIST_HEAD(&event->rb_entry);
 	INIT_LIST_HEAD(&event->active_entry);
+	INIT_LIST_HEAD(&event->pevent_entry);
 	INIT_HLIST_NODE(&event->hlist_entry);
-
 
 	init_waitqueue_head(&event->waitq);
 	init_irq_work(&event->pending, perf_pending_event);
@@ -7009,6 +7013,13 @@ set:
 			goto unlock;
 	}
 
+	/* Don't redirect read-only (persistent) events. */
+	ret = -EACCES;
+	if (old_rb && !old_rb->overwrite)
+		goto unlock;
+	if (rb && !rb->overwrite)
+		goto unlock;
+
 	if (old_rb)
 		ring_buffer_detach(event, old_rb);
 
@@ -7067,6 +7078,17 @@ SYSCALL_DEFINE5(perf_event_open,
 	if (err)
 		return err;
 
+	if (flags & PERF_FLAG_FD_CLOEXEC)
+		f_flags |= O_CLOEXEC;
+
+	/* return fd for an existing persistent event */
+	if (attr.type == PERF_TYPE_PERSISTENT)
+		return perf_get_persistent_event_fd(cpu, attr.config, f_flags);
+
+	/* put event into persistent state (not yet supported) */
+	if (attr.persistent)
+		return -EOPNOTSUPP;
+
 	if (!attr.exclude_kernel) {
 		if (perf_paranoid_kernel() && !capable(CAP_SYS_ADMIN))
 			return -EACCES;
@@ -7088,9 +7110,6 @@ SYSCALL_DEFINE5(perf_event_open,
 	 */
 	if ((flags & PERF_FLAG_PID_CGROUP) && (pid == -1 || cpu == -1))
 		return -EINVAL;
-
-	if (flags & PERF_FLAG_FD_CLOEXEC)
-		f_flags |= O_CLOEXEC;
 
 	if (group_fd != -1) {
 		err = perf_fget_light(group_fd, &group);
@@ -8012,7 +8031,8 @@ void __init perf_event_init(void)
 	perf_pmu_register(&perf_swevent, "software", PERF_TYPE_SOFTWARE);
 	perf_pmu_register(&perf_cpu_clock, NULL, -1);
 	perf_pmu_register(&perf_task_clock, NULL, -1);
-	perf_tp_register();
+	perf_register_tp();
+	perf_register_persistent();
 	perf_cpu_notifier(perf_cpu_notify);
 	register_reboot_notifier(&perf_reboot_notifier);
 
