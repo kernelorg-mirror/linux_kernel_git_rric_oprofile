@@ -1,6 +1,7 @@
 #include <linux/slab.h>
 #include <linux/perf_event.h>
 #include <linux/ftrace_event.h>
+#include <linux/idr.h>
 
 #include "internal.h"
 
@@ -13,9 +14,36 @@ struct pevent {
 	int		id;
 };
 
+static struct idr event_idr;
+static struct mutex event_lock;
 static struct pmu persistent_pmu;
 static DEFINE_PER_CPU(struct list_head, pevents);
 static DEFINE_PER_CPU(struct mutex, pevents_lock);
+
+static inline struct pevent *find_event(int id)
+{
+	struct pevent *pevent;
+	rcu_read_lock();
+	pevent = idr_find(&event_idr, id);
+	rcu_read_lock();
+	return pevent;
+}
+
+static inline int get_event_id(struct pevent *pevent)
+{
+	int event_id;
+	mutex_lock(&event_lock);
+	event_id = idr_alloc(&event_idr, pevent, 1, INT_MAX, GFP_KERNEL);
+	mutex_unlock(&event_lock);
+	return event_id;
+}
+
+static inline void put_event_id(int id)
+{
+	mutex_lock(&event_lock);
+	idr_remove(&event_idr, id);
+	mutex_unlock(&event_lock);
+}
 
 /* Must be protected with pevents_lock. */
 static struct perf_event *__pevent_find(int cpu, int id)
@@ -128,13 +156,16 @@ persistent_open(char *name, struct perf_event_attr *attr, int nr_pages)
 	struct pevent *pevent;
 	char id_buf[32];
 	int cpu;
-	int ret = 0;
+	int ret;
 
 	pevent = kzalloc(sizeof(*pevent), GFP_KERNEL);
 	if (!pevent)
 		return -ENOMEM;
 
-	pevent->id = attr->config;
+	ret = get_event_id(pevent);
+	if (ret < 0)
+		goto fail;
+	pevent->id = ret;
 
 	if (!name) {
 		snprintf(id_buf, sizeof(id_buf), "%d", pevent->id);
@@ -163,6 +194,9 @@ persistent_open(char *name, struct perf_event_attr *attr, int nr_pages)
 fail:
 	for_each_possible_cpu(cpu)
 		persistent_event_close(cpu, pevent);
+
+	if (pevent->id)
+		put_event_id(pevent->id);
 	kfree(pevent->name);
 	kfree(pevent);
 
@@ -306,6 +340,8 @@ void __init perf_register_persistent(void)
 {
 	int cpu;
 
+	idr_init(&event_idr);
+	mutex_init(&event_lock);
 	perf_pmu_register(&persistent_pmu, "persistent", PERF_TYPE_PERSISTENT);
 
 	for_each_possible_cpu(cpu) {
