@@ -59,6 +59,49 @@ static struct perf_event *__pevent_find(int cpu, int id)
 	return NULL;
 }
 
+static void pevent_free(struct pevent *pevent)
+{
+	if (pevent->id)
+		put_event_id(pevent->id);
+
+	kfree(pevent->name);
+	kfree(pevent);
+}
+
+static struct pevent *pevent_alloc(char *name)
+{
+	struct pevent *pevent;
+	char id_buf[32];
+	int ret;
+
+	pevent = kzalloc(sizeof(*pevent), GFP_KERNEL);
+	if (!pevent)
+		return ERR_PTR(-ENOMEM);
+
+	atomic_set(&pevent->refcount, 1);
+
+	ret = get_event_id(pevent);
+	if (ret < 0)
+		goto fail;
+	pevent->id = ret;
+
+	if (!name) {
+		snprintf(id_buf, sizeof(id_buf), "%d", pevent->id);
+		name = id_buf;
+	}
+
+	pevent->name = kstrdup(name, GFP_KERNEL);
+	if (!pevent->name) {
+		ret = -ENOMEM;
+		goto fail;
+	}
+
+	return pevent;
+fail:
+	pevent_free(pevent);
+	return ERR_PTR(ret);
+}
+
 static int pevent_add(struct pevent *pevent, struct perf_event *event)
 {
 	int ret = -EEXIST;
@@ -74,6 +117,7 @@ static int pevent_add(struct pevent *pevent, struct perf_event *event)
 
 	ret = 0;
 	event->pevent_id = pevent->id;
+	event->attr.persistent = 1;
 	list_add_tail(&event->pevent_entry, &per_cpu(pevents, cpu));
 unlock:
 	mutex_unlock(&per_cpu(pevents_lock, cpu));
@@ -91,6 +135,7 @@ static struct perf_event *pevent_del(struct pevent *pevent, int cpu)
 	if (event) {
 		list_del(&event->pevent_entry);
 		event->pevent_id = 0;
+		event->attr.persistent = 0;
 	}
 
 	mutex_unlock(&per_cpu(pevents_lock, cpu));
@@ -160,33 +205,12 @@ static int __maybe_unused
 persistent_open(char *name, struct perf_event_attr *attr, int nr_pages)
 {
 	struct pevent *pevent;
-	char id_buf[32];
 	int cpu;
 	int ret;
 
-	pevent = kzalloc(sizeof(*pevent), GFP_KERNEL);
-	if (!pevent)
-		return -ENOMEM;
-
-	atomic_set(&pevent->refcount, 1);
-
-	ret = get_event_id(pevent);
-	if (ret < 0)
-		goto fail;
-	pevent->id = ret;
-
-	if (!name) {
-		snprintf(id_buf, sizeof(id_buf), "%d", pevent->id);
-		name = id_buf;
-	}
-
-	pevent->name = kstrdup(name, GFP_KERNEL);
-	if (!pevent->name) {
-		ret = -ENOMEM;
-		goto fail;
-	}
-
-	pevent->sysfs.id = pevent->id;
+	pevent = pevent_alloc(name);
+	if (IS_ERR(pevent))
+		return PTR_ERR(pevent);
 
 	for_each_possible_cpu(cpu) {
 		ret = persistent_event_open(cpu, pevent, attr, nr_pages);
@@ -206,10 +230,7 @@ fail:
 out:
 	if (atomic_dec_and_test(&pevent->refcount)) {
 		pevent_sysfs_unregister(pevent);
-		if (pevent->id)
-			put_event_id(pevent->id);
-		kfree(pevent->name);
-		kfree(pevent);
+		pevent_free(pevent);
 	}
 
 	return ret;
@@ -438,4 +459,105 @@ void __init perf_register_persistent(void)
 		INIT_LIST_HEAD(&per_cpu(pevents, cpu));
 		mutex_init(&per_cpu(pevents_lock, cpu));
 	}
+}
+
+/*
+ * Detach an event from a process. The event will remain in the system
+ * after closing the event's fd, it becomes persistent.
+ */
+int perf_event_detach(struct perf_event *event)
+{
+	struct pevent *pevent;
+	int cpu;
+	int ret;
+
+	if (!try_get_event(event))
+		return -ENOENT;
+
+	/* task events not yet supported: */
+	cpu = event->cpu;
+	if ((unsigned)cpu >= nr_cpu_ids) {
+		ret = -EINVAL;
+		goto fail_rb;
+	}
+
+	/*
+	 * Avoid grabbing an id, later checked again in pevent_add()
+	 * with mmap_mutex held.
+	 */
+	if (event->pevent_id) {
+		ret = -EEXIST;
+		goto fail_rb;
+	}
+
+	mutex_lock(&event->mmap_mutex);
+	if (event->rb)
+		ret = -EBUSY;
+	else
+		ret = perf_alloc_rb(event, CPU_BUFFER_NR_PAGES, 0);
+	mutex_unlock(&event->mmap_mutex);
+
+	if (ret)
+		goto fail_rb;
+
+	pevent = pevent_alloc(NULL);
+	if (IS_ERR(pevent)) {
+		ret = PTR_ERR(pevent);
+		goto fail_pevent;
+	}
+
+	ret = pevent_add(pevent, event);
+	if (ret)
+		goto fail_add;
+
+	ret = pevent_sysfs_register(pevent);
+	if (ret)
+		goto fail_sysfs;
+
+	atomic_inc(&event->mmap_count);
+
+	return pevent->id;
+fail_sysfs:
+	pevent_del(pevent, cpu);
+fail_add:
+	pevent_free(pevent);
+fail_pevent:
+	mutex_lock(&event->mmap_mutex);
+	if (event->rb)
+		perf_free_rb(event);
+	mutex_unlock(&event->mmap_mutex);
+fail_rb:
+	put_event(event);
+	return ret;
+}
+
+/*
+ * Attach an event to a process. The event will be removed after all
+ * users disconnected from it, it's no longer persistent in the
+ * system.
+ */
+int perf_event_attach(struct perf_event *event)
+{
+	int cpu = event->cpu;
+	struct pevent *pevent;
+
+	if ((unsigned)cpu >= nr_cpu_ids)
+		return -EINVAL;
+
+	pevent = find_event(event->pevent_id);
+	if (!pevent)
+		return -EINVAL;
+
+	event = pevent_del(pevent, cpu);
+	if (!event)
+		return -EINVAL;
+
+	if (atomic_dec_and_test(&pevent->refcount)) {
+		pevent_sysfs_unregister(pevent);
+		pevent_free(pevent);
+	}
+
+	persistent_event_release(event);
+
+	return 0;
 }

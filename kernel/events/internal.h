@@ -195,5 +195,7 @@ extern void perf_free_rb(struct perf_event *event);
 extern int perf_get_fd(struct perf_event *event);
 extern int perf_get_persistent_event_fd(int cpu, int id);
 extern void __init perf_register_persistent(void);
+extern int perf_event_detach(struct perf_event *event);
+extern int perf_event_attach(struct perf_event *event);
 
 #endif /* _KERNEL_EVENTS_INTERNAL_H */

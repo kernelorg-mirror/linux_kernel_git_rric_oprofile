@@ -3622,6 +3622,12 @@ static long perf_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case PERF_EVENT_IOC_SET_FILTER:
 		return perf_event_set_filter(event, (void __user *)arg);
 
+	case PERF_EVENT_IOC_DETACH:
+		return perf_event_detach(event);
+
+	case PERF_EVENT_IOC_ATTACH:
+		return perf_event_attach(event);
+
 	default:
 		return -ENOTTY;
 	}
