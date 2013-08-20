@@ -9,6 +9,7 @@
 #define CPU_BUFFER_NR_PAGES	((512 * 1024) / PAGE_SIZE)
 
 struct pevent {
+	atomic_t	refcount;
 	struct perf_pmu_events_attr sysfs;
 	char		*name;
 	int		id;
@@ -130,6 +131,7 @@ static int persistent_event_open(int cpu, struct pevent *pevent,
 	if (ret)
 		goto fail;
 
+	atomic_inc(&pevent->refcount);
 	atomic_inc(&event->mmap_count);
 
 	/* All workie, enable event now */
@@ -144,8 +146,11 @@ fail:
 static void persistent_event_close(int cpu, struct pevent *pevent)
 {
 	struct perf_event *event = pevent_del(pevent, cpu);
-	if (event)
+	if (event) {
+		/* Safe, the caller holds &pevent->refcount too. */
+		atomic_dec(&pevent->refcount);
 		persistent_event_release(event);
+	}
 }
 
 static int pevent_sysfs_register(struct pevent *event);
@@ -161,6 +166,8 @@ persistent_open(char *name, struct perf_event_attr *attr, int nr_pages)
 	pevent = kzalloc(sizeof(*pevent), GFP_KERNEL);
 	if (!pevent)
 		return -ENOMEM;
+
+	atomic_set(&pevent->refcount, 1);
 
 	ret = get_event_id(pevent);
 	if (ret < 0)
@@ -187,21 +194,21 @@ persistent_open(char *name, struct perf_event_attr *attr, int nr_pages)
 	}
 
 	ret = pevent_sysfs_register(pevent);
-	if (ret)
-		goto fail;
-
-	return 0;
+	if (!ret)
+		goto out;
 fail:
 	for_each_possible_cpu(cpu)
 		persistent_event_close(cpu, pevent);
 
-	if (pevent->id)
-		put_event_id(pevent->id);
-	kfree(pevent->name);
-	kfree(pevent);
-
 	pr_err("%s: Error adding persistent event: %d\n",
 		__func__, ret);
+out:
+	if (atomic_dec_and_test(&pevent->refcount)) {
+		if (pevent->id)
+			put_event_id(pevent->id);
+		kfree(pevent->name);
+		kfree(pevent);
+	}
 
 	return ret;
 }
